@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Admin Penugasan Publikasi</title>
+</head>
+<body class="bg-slate-50 min-h-screen p-4 md:p-8">
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-10 text-center">
+            <h1 class="text-3xl font-extrabold text-slate-800 uppercase tracking-tight">KONTROL PENUGASAN TIM PUBLIKASI</h1>
+            <p class="text-slate-500 mt-1">Monitoring beban kerja, jadwal, & sebaran orderan unit</p>
+        </header>
+
+        <div class="mb-6 flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="flex items-center gap-3">
+                <label for="monthFilter" class="font-bold text-slate-700">Periode:</label>
+                <select id="monthFilter" onchange="renderAll()" class="p-2.5 rounded-lg border-2 border-blue-100 focus:border-blue-500 bg-slate-50 font-medium text-slate-700 min-w-[200px] outline-none cursor-pointer">
+                    <option value="">Memuat data...</option>
+                </select>
+            </div>
+            
+            <button onclick="copyRekapSemua()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all flex items-center gap-2 text-sm active:scale-95">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                Copy Rekap Grup WA
+            </button>
+        </div>
+
+        <div id="stats-section" class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10 hidden">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center">
+                <h3 class="font-bold text-slate-700 mb-4 text-sm self-start">📈 Sebaran Order Per Unit</h3>
+                <div class="w-full max-w-[250px]">
+                    <canvas id="unitChart"></canvas>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 mb-4 text-sm">📊 Distribusi Tugas Personel</h3>
+                <div id="chart-container" class="grid grid-cols-2 md:grid-cols-3 gap-6"></div>
+            </div>
+        </div>
+
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-12">
+            <div class="p-5 bg-slate-800 text-white font-bold flex flex-wrap justify-between items-center gap-2">
+                <span>Daftar Order Masuk</span>
+                <span class="text-xs font-normal opacity-80 bg-slate-700 px-3 py-1 rounded-full">Input manual bisa langsung di Google Sheet</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider">
+                            <th class="p-4 border-b">Tgl/Waktu/Unit</th>
+                            <th class="p-4 border-b">Detail Kegiatan</th>
+                            <th class="p-4 border-b text-left">Pilih Personel</th>
+                            <th class="p-4 border-b text-center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body" class="text-sm"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <h2 class="text-2xl font-bold mb-6 text-slate-700 border-l-4 border-blue-500 pl-4">KARTU JADWAL TIM</h2>
+        <div id="schedule-view" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </div>
+
+    <script>
+        // GANTI DENGAN LINK DEPLOYMENT ANDA JIKA BERUBAH
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwISMVhT58rIJizwSWoPl4EWiRvT-79_93BhxHOocZZaPfFhoYCWvub1nIFpIe7ct19iA/exec'; 
+        const PERSONEL = ["Livia", "Dodai", "Nia", "Wahyu", "Yesi", "Indri"];
+        
+        const ADMIN_PIN = "yesi123"; 
+
+        let allData = [];
+        let myPieChart = null; 
+
+        async function fetchData() {
+            try {
+                const res = await fetch(SCRIPT_URL);
+                const rawData = await res.json();
+                
+                allData = rawData.map(d => {
+                    if (!d.bulanTahun && d.tglRaw) {
+                        const dateObj = new Date(d.tglRaw);
+                        const namaBulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                        d.bulanTahun = `${namaBulan[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+                    }
+                    if (!d.status || d.status.trim() === "") d.status = "In Progress";
+                    return d;
+                });
+
+                setupFilter();
+                renderAll();
+            } catch (error) {
+                console.error("Gagal ambil data:", error);
+                document.getElementById('table-body').innerHTML = `<tr><td colspan="4" class="p-10 text-center text-red-500">Gagal terhubung ke Google Sheets.</td></tr>`;
+            }
+        }
+
+        function setupFilter() {
+            const select = document.getElementById('monthFilter');
+            let daftarBulan = [...new Set(allData.map(d => d.bulanTahun).filter(b => b && b !== "Tanpa Tanggal"))];
+            
+            if (daftarBulan.length === 0) {
+                select.innerHTML = `<option value="">Belum ada data</option>`;
+                return;
+            }
+
+            if(allData.some(d => d.bulanTahun === "Tanpa Tanggal")) {
+                daftarBulan.push("Tanpa Tanggal");
+            }
+
+            select.innerHTML = daftarBulan.map(bln => `<option value="${bln}">${bln}</option>`).join('');
+
+            const currentDate = new Date();
+            const namaBulanIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+            const stringBulanIni = `${namaBulanIndo[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+
+            if (daftarBulan.includes(stringBulanIni)) {
+                select.value = stringBulanIni; 
+            } else {
+                select.value = daftarBulan[0]; 
+            }
+        }
+
+        function renderAll() {
+            const selectedMonth = document.getElementById('monthFilter').value;
+            const filteredData = allData.filter(d => d.bulanTahun === selectedMonth);
+
+            renderTable(filteredData);
+            renderSchedule(filteredData);
+            renderStats(filteredData);
+            renderUnitPieChart(filteredData);
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('table-body');
+            if(data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-10 text-center text-slate-400 italic">Tidak ada orderan pada bulan ini.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.map(row => {
+                let infoWaktu = row.jam ? `🕒 ${row.jam}` : '';
+                let infoDurasi = row.durasi ? `<span class="text-slate-400 font-normal ml-1">| ⏳ ${row.durasi}</span>` : '';
+                
+                let bgStatus = '';
+                if (row.status === 'Done') bgStatus = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                else if (row.status === 'Canceled') bgStatus = 'bg-red-100 text-red-800 border-red-300';
+                else bgStatus = 'bg-amber-100 text-amber-800 border-amber-300';
+                
+                return `
+                <tr class="border-b hover:bg-blue-50/30 transition-colors">
+                    <td class="p-4 align-top w-48">
+                        <div class="font-bold text-blue-700">${row.tglFormatted || '-'}</div>
+                        <div class="text-[11px] text-red-600 font-bold mt-1">${infoWaktu} ${infoDurasi}</div>
+                        <div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-wider">${row.unit || '-'}</div>
+                    </td>
+                    <td class="p-4 align-top w-1/3">
+                        <div class="font-semibold text-slate-800">${row.kegiatan || '-'}</div>
+                        <div class="text-xs text-slate-500 mt-1">PIC: ${row.pic || '-'}</div>
+                        <button onclick="toggleDetail(${row.rowId})" class="mt-2 text-[11px] text-blue-600 font-bold hover:underline">LIHAT DETAIL ▾</button>
+                        <div id="detail-${row.rowId}" class="hidden mt-2 p-3 bg-slate-50 rounded-lg text-xs border border-slate-200">
+                           <p><span class="font-bold text-slate-700">Jenis:</span> ${row.jenisKerja || '-'}</p>
+                           <p class="mt-1"><span class="font-bold text-slate-700">Kebutuhan:</span> ${row.detail || '-'}</p>
+                        </div>
+                    </td>
+                    <td class="p-4 align-top">
+                        <div class="flex flex-wrap gap-1.5 justify-start">
+                            ${PERSONEL.map(p => `
+                                <button onclick="toggleAssign(${row.rowId}, '${p}')" 
+                                    class="px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all shadow-sm ${row.petugas && row.petugas.includes(p) ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
+                                    ${p}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </td>
+                    <td class="p-4 align-top text-center">
+                        <select onchange="updateStatus(${row.rowId}, this.value)" class="${bgStatus} text-xs font-bold rounded-lg px-2 py-1.5 border outline-none cursor-pointer w-full max-w-[120px]">
+                            <option value="In Progress" ${row.status === 'In Progress' ? 'selected' : ''}>⏳ In Progress</option>
+                            <option value="Done" ${row.status === 'Done' ? 'selected' : ''}>✅ Done</option>
+                            <option value="Canceled" ${row.status === 'Canceled' ? 'selected' : ''}>❌ Canceled</option>
+                        </select>
+                    </td>
+                </tr>
+                `;
+            }).join('');
+        }
+
+        function renderStats(data) {
+            const chartContainer = document.getElementById('chart-container');
+            document.getElementById('stats-section').classList.remove('hidden');
+            chartContainer.innerHTML = '';
+
+            let tugasCounts = PERSONEL.map(p => data.filter(d => d.petugas && d.petugas.includes(p)).length);
+            let maxTugas = Math.max(...tugasCounts) || 1;
+
+            PERSONEL.forEach((p, i) => {
+                let jml = tugasCounts[i];
+                let percentage = (jml / maxTugas) * 100;
+                let color = jml > 5 ? 'bg-red-500' : (jml > 2 ? 'bg-emerald-500' : 'bg-blue-500');
+
+                // Menghitung status spesifik untuk rincian text
+                let tugasSelesai = data.filter(d => d.petugas && d.petugas.includes(p) && d.status === 'Done').length;
+                let tugasProses = data.filter(d => d.petugas && d.petugas.includes(p) && d.status === 'In Progress').length;
+                
+                let rincianStatus = jml > 0 ? `<div class="text-[10px] text-slate-500 font-normal mt-0.5">${tugasSelesai} ✅ | ${tugasProses} ⏳</div>` : '';
+
+                chartContainer.innerHTML += `
+                    <div class="flex flex-col justify-center">
+                        <div class="flex justify-between items-start text-[11px] font-bold mb-1.5 text-slate-700 uppercase">
+                            <div>
+                                <span>${p}</span>
+                                ${rincianStatus}
+                            </div>
+                            <span class="${jml > 5 ? 'text-red-500' : 'text-blue-600'} text-xs">${jml} Tugas</span>
+                        </div>
+                        <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden shadow-inner">
+                            <div class="${color} h-full transition-all duration-700" style="width: ${percentage}%"></div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function renderUnitPieChart(data) {
+            const unitCounts = {};
+            data.forEach(row => {
+                let unit = row.unit ? row.unit.trim().toUpperCase() : "LAINNYA";
+                if(unit === "" || unit === "-") unit = "LAINNYA";
+                unitCounts[unit] = (unitCounts[unit] || 0) + 1;
+            });
+
+            const labels = Object.keys(unitCounts);
+            const values = Object.values(unitCounts);
+
+            if (myPieChart) myPieChart.destroy();
+
+            const ctx = document.getElementById('unitChart').getContext('2d');
+            myPieChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b', '#14b8a6', '#f43f5e']
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10, family: 'sans-serif' } } }
+                    },
+                    animation: { animateScale: true, animateRotate: true }
+                }
+            });
+        }
+
+        function renderSchedule(data) {
+            const container = document.getElementById('schedule-view');
+            container.innerHTML = PERSONEL.map(p => {
+                const tugas = data.filter(d => d.petugas && d.petugas.includes(p));
+                
+                const hitungTanggal = {};
+                tugas.forEach(t => {
+                    if(t.tglFormatted && t.tglFormatted !== "Tanpa Tgl") {
+                        hitungTanggal[t.tglFormatted] = (hitungTanggal[t.tglFormatted] || 0) + 1;
+                    }
+                });
+
+                return `
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col hover:shadow-md transition-shadow">
+                        <h3 class="font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4 flex justify-between items-center">
+                            ${p} <span class="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-bold">${tugas.length} Tugas</span>
+                        </h3>
+                        <div class="space-y-3 flex-grow min-h-[100px]">
+                            ${tugas.length ? tugas.map(t => {
+                                let sabtu = (t.hari === 'Saturday' || t.hari === 'Sabtu') ? '<span class="text-red-500 text-[10px] bg-red-50 px-1 ml-1 rounded">[SABTU]</span>' : '';
+                                let pendamping = t.petugas.filter(name => name !== p).join(', ');
+                                let ketPendamping = pendamping ? `<span class="text-slate-400 italic text-[11px] block mt-0.5">dg ${pendamping}</span>` : '';
+                                
+                                let isBentrok = hitungTanggal[t.tglFormatted] > 1;
+                                let badgeBentrok = isBentrok ? '<span class="text-red-600 bg-red-100 px-1.5 py-0.5 rounded text-[10px] font-bold ml-2 border border-red-200">⚠️ CEK JAM</span>' : '';
+                                let borderColor = isBentrok ? 'border-red-500' : 'border-blue-200';
+                                
+                                let infoWaktu = t.jam ? `<div class="text-[11px] font-bold text-red-600 mt-0.5 mb-1">🕒 ${t.jam} <span class="text-slate-400 font-normal ml-1">${t.durasi ? `⏳ ${t.durasi}` : ''}</span></div>` : '';
+                                
+                                // Label Badge Status
+                                let statusBadge = '';
+                                let opacityClass = '';
+                                if (t.status === 'Done') {
+                                    statusBadge = '<span class="bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] px-1.5 py-0.5 rounded font-bold ml-2">✅ DONE</span>';
+                                } else if (t.status === 'Canceled') {
+                                    statusBadge = '<span class="bg-red-100 text-red-700 border border-red-200 text-[9px] px-1.5 py-0.5 rounded font-bold ml-2">❌ CANCELED</span>';
+                                    opacityClass = 'opacity-60'; // meredupkan tugas yg batal
+                                } else {
+                                    statusBadge = '<span class="bg-amber-100 text-amber-700 border border-amber-200 text-[9px] px-1.5 py-0.5 rounded font-bold ml-2">⏳ PROSES</span>';
+                                }
+
+                                return `
+                                <div class="text-sm border-l-2 ${borderColor} pl-3 py-1 ${opacityClass}">
+                                    <div class="font-bold text-slate-800 flex items-center flex-wrap">${t.tglFormatted}${sabtu}${badgeBentrok}</div>
+                                    ${infoWaktu}
+                                    <div class="text-slate-700 leading-snug mt-0.5 flex items-start justify-between gap-1">
+                                        <span>${t.kegiatan}</span>
+                                        <span class="shrink-0 mt-0.5">${statusBadge}</span>
+                                    </div>
+                                    ${ketPendamping}
+                                </div>
+                                `;
+                            }).join('') : '<div class="text-slate-400 italic text-sm flex items-center justify-center h-full">Belum ada tugas</div>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function copyRekapSemua() {
+            const selectedMonth = document.getElementById('monthFilter').value;
+            const filteredData = allData.filter(d => d.bulanTahun === selectedMonth);
+            
+            if(filteredData.length === 0) {
+                alert("Tidak ada data untuk direkap pada bulan ini.");
+                return;
+            }
+
+            let text = `*REKAP JADWAL TIM PUBLIKASI*\n*Periode: ${selectedMonth}*\n\n`;
+
+            PERSONEL.forEach(p => {
+                const tugas = filteredData.filter(d => d.petugas && d.petugas.includes(p));
+                if (tugas.length > 0) {
+                    text += `*${p.toUpperCase()}*\n`;
+                    tugas.forEach(t => {
+                        let tgl = t.tglFormatted.split(" ").slice(0, 2).join(" ");
+                        let sabtu = (t.hari === 'Saturday' || t.hari === 'Sabtu') ? ' [SABTU]' : '';
+                        let jam = t.jam ? ` (${t.jam})` : ''; 
+                        let partner = t.petugas.filter(n => n !== p).join(', ');
+                        
+                        let ketStatus = t.status === 'Done' ? ' [✅Selesai]' : (t.status === 'Canceled' ? ' [❌Batal]' : '');
+                        
+                        text += `• ${tgl}${sabtu}${jam} — ${t.kegiatan}${partner ? ' (dg ' + partner + ')' : ''}${ketStatus}\n`;
+                    });
+                    text += `\n`;
+                }
+            });
+
+            navigator.clipboard.writeText(text.trim()).then(() => alert("✅ Rekap grup WA berhasil disalin!\nSilakan paste di grup."));
+        }
+
+        async function updateStatus(rowId, newStatus) {
+            if (sessionStorage.getItem("isAdmin") !== "true") {
+                const inputPin = prompt("🔒 KUNCI KEAMANAN\nHanya admin yang bisa mengubah status.\nMasukkan PIN rahasia:");
+                if (inputPin === ADMIN_PIN) {
+                    sessionStorage.setItem("isAdmin", "true"); 
+                    alert("✅ Akses Terbuka!");
+                } else {
+                    if(inputPin !== null) alert("❌ PIN Salah! Akses ditolak.");
+                    renderAll(); 
+                    return; 
+                }
+            }
+
+            const idx = allData.findIndex(d => d.rowId === rowId);
+            allData[idx].status = newStatus;
+            renderAll(); 
+            
+            try {
+                document.body.style.cursor = 'wait';
+                await fetch(SCRIPT_URL, { 
+                    method: 'POST', 
+                    body: JSON.stringify({ 
+                        rowId: rowId, 
+                        petugasList: allData[idx].petugas || [],
+                        status: newStatus 
+                    }) 
+                });
+                document.body.style.cursor = 'default';
+            } catch (error) {
+                console.error("Gagal simpan status:", error);
+                document.body.style.cursor = 'default';
+                alert("⚠️ Gagal menyimpan ke server. Pastikan internet stabil.");
+            }
+        }
+
+        async function toggleAssign(rowId, nama) {
+            if (sessionStorage.getItem("isAdmin") !== "true") {
+                const inputPin = prompt("🔒 KUNCI KEAMANAN\nHanya admin yang bisa mengubah penugasan.\nMasukkan PIN rahasia:");
+                
+                if (inputPin === ADMIN_PIN) {
+                    sessionStorage.setItem("isAdmin", "true"); 
+                    alert("✅ Akses Terbuka! Silakan atur jadwal tim.");
+                } else {
+                    if(inputPin !== null) alert("❌ PIN Salah! Akses ditolak.");
+                    return; 
+                }
+            }
+
+            const idx = allData.findIndex(d => d.rowId === rowId);
+            let petugas = allData[idx].petugas || [];
+            allData[idx].petugas = petugas.includes(nama) ? petugas.filter(n => n !== nama) : [...petugas, nama];
+            renderAll(); 
+            
+            try {
+                document.body.style.cursor = 'wait';
+                await fetch(SCRIPT_URL, { 
+                    method: 'POST', 
+                    body: JSON.stringify({ 
+                        rowId: rowId, 
+                        petugasList: allData[idx].petugas,
+                        status: allData[idx].status || 'In Progress' 
+                    }) 
+                });
+                document.body.style.cursor = 'default';
+            } catch (error) {
+                console.error("Gagal simpan:", error);
+                document.body.style.cursor = 'default';
+            }
+        }
+
+        function toggleDetail(id) { document.getElementById(`detail-${id}`).classList.toggle('hidden'); }
+
+        fetchData();
+    </script>
+</body>
+</html>
