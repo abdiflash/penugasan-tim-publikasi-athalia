@@ -150,6 +150,37 @@
                 if (row.status === 'Done') bgStatus = 'bg-emerald-100 text-emerald-800 border-emerald-300';
                 else if (row.status === 'Canceled') bgStatus = 'bg-red-100 text-red-800 border-red-300';
                 else bgStatus = 'bg-amber-100 text-amber-800 border-amber-300';
+
+                // --- 1. DETEKSI OTOMATIS PEMINJAMAN ALAT ---
+                // Mengecek apakah jenisKerja atau kegiatan mengandung kata "peminjaman alat" (case-insensitive)
+                let isPeminjaman = false;
+                const keyword = "peminjaman alat";
+                if (
+                    (row.jenisKerja && row.jenisKerja.toLowerCase().includes(keyword)) ||
+                    (row.kegiatan && row.kegiatan.toLowerCase().includes(keyword))
+                ) {
+                    isPeminjaman = true;
+                }
+
+                // --- 2. INJEKSI LABEL CYAN ---
+                let labelPeminjaman = isPeminjaman 
+                    ? `<span class="bg-cyan-100 text-cyan-700 border border-cyan-200 text-[9px] px-1.5 py-0.5 rounded font-bold ml-2 uppercase align-middle">Alat Saja</span>` 
+                    : '';
+
+                // --- 3. PEMBERSIHAN TOMBOL ---
+                let kolomPersonel = '';
+                if (isPeminjaman) {
+                    // Jika peminjaman, tampilkan teks abu-abu
+                    kolomPersonel = `<span class="text-xs text-slate-400 italic py-1.5">Tidak perlu personel</span>`;
+                } else {
+                    // Jika bukan peminjaman, render tombol seperti biasa
+                    kolomPersonel = PERSONEL.map(p => `
+                        <button onclick="toggleAssign(${row.rowId}, '${p}')" 
+                            class="px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all shadow-sm ${row.petugas && row.petugas.includes(p) ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
+                            ${p}
+                        </button>
+                    `).join('');
+                }
                 
                 return `
                 <tr class="border-b hover:bg-blue-50/30 transition-colors">
@@ -159,7 +190,9 @@
                         <div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-wider">${row.unit || '-'}</div>
                     </td>
                     <td class="p-4 align-top w-1/3">
-                        <div class="font-semibold text-slate-800">${row.kegiatan || '-'}</div>
+                        <div class="font-semibold text-slate-800 leading-snug">
+                            ${row.kegiatan || '-'}${labelPeminjaman}
+                        </div>
                         <div class="text-xs text-slate-500 mt-1">PIC: ${row.pic || '-'}</div>
                         <button onclick="toggleDetail(${row.rowId})" class="mt-2 text-[11px] text-blue-600 font-bold hover:underline">LIHAT DETAIL ▾</button>
                         <div id="detail-${row.rowId}" class="hidden mt-3 p-4 bg-slate-50 rounded-xl text-xs border border-slate-200 shadow-inner">
@@ -189,12 +222,7 @@
                     </td>
                     <td class="p-4 align-top">
                         <div class="flex flex-wrap gap-1.5 justify-start">
-                            ${PERSONEL.map(p => `
-                                <button onclick="toggleAssign(${row.rowId}, '${p}')" 
-                                    class="px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all shadow-sm ${row.petugas && row.petugas.includes(p) ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
-                                    ${p}
-                                </button>
-                            `).join('')}
+                            ${kolomPersonel}
                         </div>
                     </td>
                     <td class="p-4 align-top text-center">
