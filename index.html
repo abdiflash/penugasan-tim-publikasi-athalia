@@ -151,14 +151,20 @@
                 else if (row.status === 'Canceled') bgStatus = 'bg-red-100 text-red-800 border-red-300';
                 else bgStatus = 'bg-amber-100 text-amber-800 border-amber-300';
 
-                // --- 1. DETEKSI OTOMATIS PEMINJAMAN ALAT ---
-                // Mengecek apakah jenisKerja atau kegiatan mengandung kata "peminjaman alat" (case-insensitive)
+                // --- 1. DETEKSI OTOMATIS PEMINJAMAN ALAT (DIPERBARUI) ---
                 let isPeminjaman = false;
                 const keyword = "peminjaman alat";
+                
+                // Cek dari jenisKerja atau kegiatan
                 if (
                     (row.jenisKerja && row.jenisKerja.toLowerCase().includes(keyword)) ||
                     (row.kegiatan && row.kegiatan.toLowerCase().includes(keyword))
                 ) {
+                    isPeminjaman = true;
+                }
+                
+                // Cek dari kolom isian ALAT. Jika ada isinya (bukan kosong/strip), maka otomatis dianggap peminjaman
+                if (row.alat && row.alat.trim() !== '' && row.alat.trim() !== '-') {
                     isPeminjaman = true;
                 }
 
@@ -236,7 +242,6 @@
                 `;
             }).join('');
         }
-
         function renderStats(data) {
             const chartContainer = document.getElementById('chart-container');
             document.getElementById('stats-section').classList.remove('hidden');
